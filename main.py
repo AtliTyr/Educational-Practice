@@ -29,111 +29,43 @@ def get_ipv4_address(domain_name):
     except socket.gaierror:
         return None
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "Привет! Я бот для отслеживания состояния сайтов. Используйте /help для получения информации о моих возможностях.")
+def process_request(r):
+    status = f"\nStatus code: {r.status_code} \nStatus message: {r.reason} \n"
 
-@bot.message_handler(commands=['add'])
-def add_site(message):
-    msg = bot.send_message(message.chat.id, "Введите URL сайта, который хотите добавить:")
-    bot.register_next_step_handler(msg, process_site)
+    if r.headers.get('Set-Cookie'):
+        ind_from = r.headers['Set-Cookie'].find('domain=') + 6
+        ind_to = r.headers['Set-Cookie'].find(';', ind_from)
+        ipv4_addresses = get_ipv4_address(r.headers['Set-Cookie'][ind_from + 1:ind_to].strip('.'))
+        
+        if ipv4_addresses:
+            status += f"IPv4 адрес: {', '.join(ipv4_addresses)}\n"
+        else:
+            status += f"Не удалось получить IPv4 адрес\n"
+    for key in r.headers:
+        status += '{}: {}\n'.format(key, r.headers[key])
 
-def process_site(message):
-    site = message.text.strip()
-    user_id = message.chat.id
-
-    if user_id not in user_sites:
-        user_sites[user_id] = []
-
-    if site in user_sites[user_id]:
-        bot.send_message(user_id, f"Сайт {site} уже присутствует в вашем списке")
-    else:
-        user_sites[user_id].append(site)
-        bot.send_message(user_id, f"Сайт {site} добавлен в ваш список.")
-
-@bot.message_handler(commands=['clear'])
-def clear(message):
-    try:
-        args = message.text.split()
-        if len(args) == 1:
-            user_sites.pop(message.chat.id)
-            bot.send_message(message.chat.id, "Ваш список сайтов очищен.")
-        elif len(args) > 1:
-            sites = user_sites[message.chat.id]
-            site = sites[int(args[1]) - 1]
-            sites.remove(site)
-            bot.send_message(message.chat.id, f"Сайт {site} удалён из списка.")
-    except KeyError:
-        bot.send_message(message.chat.id, "Вы не добавили ни одного сайта")
-    except (TypeError, ValueError, IndexError):
-        bot.send_message(message.chat.id, "Проверьте корректность введённого индекса!")
-
-@bot.message_handler(commands=['list'])
-def list_sites(message):
-    user_id = message.chat.id
-    sites = user_sites.get(user_id, [])
-
-    if not sites:
-        bot.send_message(user_id, "Ваш список сайтов пуст.")
-    else:
-        response = "Ваши сайты:\n"
-        for index, site in enumerate(sites):
-            response += f"{index + 1}. {site}\n"
-        bot.send_message(user_id, response)
+    return status
 
 @bot.message_handler(commands=['check'])
 def check_sites(message):
     user_id = message.chat.id
     sites = user_sites.get(user_id, [])
-
     if not sites:
         bot.send_message(user_id, "Ваш список сайтов пуст.")
         return
-
     args = message.text.split()
-
     response = " "
-
     try:
         if len(args) > 1:
             r = requests.get(sites[int(args[1]) - 1], timeout=5)
-            status = f"\nStatus code: {r.status_code} \nStatus message: {r.reason} \n"
-
-            if r.headers.get('Set-Cookie'):
-                ind_from = r.headers['Set-Cookie'].find('domain=') + 6
-                ind_to = r.headers['Set-Cookie'].find(';', ind_from)
-                ipv4_addresses = get_ipv4_address(r.headers['Set-Cookie'][ind_from + 1:ind_to].strip('.'))
-                
-                if ipv4_addresses:
-                    status += f"IPv4 адрес: {', '.join(ipv4_addresses)}\n"
-                else:
-                    status += f"Не удалось получить IPv4 адрес\n"
-
-            for key in r.headers:
-                status += '{}: {}\n'.format(key, r.headers[key])
-
-            # response += '{}\n```{}```\n'.format(f"{args[1]}.{sites[int(args[1]) - 1]}:", status)
+            status = process_request(r)
             response += f"{args[1]}. {sites[int(args[1]) - 1]} ```{status}```\n"
         else:
             for index, site in enumerate(sites):
                 r = requests.get(site, timeout=5)
-                status = f"\nStatus code: {r.status_code} \nStatus message: {r.reason} \n"
-                if r.headers.get('Set-Cookie'):
-                    ind_from = r.headers['Set-Cookie'].find('domain=') + 6
-                    ind_to = r.headers['Set-Cookie'].find(';', ind_from)
-                    ipv4_addresses = get_ipv4_address(r.headers['Set-Cookie'][ind_from + 1:ind_to].strip('.'))
-                    
-                    if ipv4_addresses:
-                        status += f"IPv4 адрес: {', '.join(ipv4_addresses)}\n"
-                    else:
-                        status += f"Не удалось получить IPv4 адрес\n"
-                for key in r.headers:
-                    status += '{}: {}\n'.format(key, r.headers[key])
-                
+                status = process_request(r)
                 response += f"{index + 1}. {site} ```{status}```\n"
-
         bot.send_message(user_id, response, parse_mode="markdown")
-
     except (TypeError, ValueError, IndexError):
         bot.send_message(message.chat.id, "Проверьте корректность введённого индекса!")
         return 
@@ -222,7 +154,7 @@ def send_response_file(chat_id, response):
 
     # Удаляем файл после отправки
     os.remove(file_path)
-
+####################################################
 @bot.message_handler(commands=['help'])
 def help_command(message):
     help_text = (
@@ -236,6 +168,60 @@ def help_command(message):
         "/help - показать это сообщение"
     )
     bot.send_message(message.chat.id, help_text)
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "Привет! Я бот для отслеживания состояния сайтов. Используйте /help для получения информации о моих возможностях.")
+
+@bot.message_handler(commands=['add'])
+def add_site(message):
+    msg = bot.send_message(message.chat.id, "Введите URL сайта, который хотите добавить:")
+    bot.register_next_step_handler(msg, process_site)
+
+def process_site(message):
+    site = message.text.strip()
+    user_id = message.chat.id
+
+    if user_id not in user_sites:
+        user_sites[user_id] = []
+
+    if site in user_sites[user_id]:
+        bot.send_message(user_id, f"Сайт {site} уже присутствует в вашем списке")
+    else:
+        user_sites[user_id].append(site)
+        bot.send_message(user_id, f"Сайт {site} добавлен в ваш список.")
+####################################################
+@bot.message_handler(commands=['clear'])
+def clear(message):
+    try:
+        args = message.text.split()
+        if len(args) == 1:
+            user_sites.pop(message.chat.id)
+            bot.send_message(message.chat.id, "Ваш список сайтов очищен.")
+        elif len(args) > 1:
+            sites = user_sites[message.chat.id]
+            site = sites[int(args[1]) - 1]
+            sites.remove(site)
+            bot.send_message(message.chat.id, f"Сайт {site} удалён из списка.")
+    except KeyError:
+        bot.send_message(message.chat.id, "Вы не добавили ни одного сайта")
+    except (TypeError, ValueError, IndexError):
+        bot.send_message(message.chat.id, "Проверьте корректность введённого индекса!")
+
+@bot.message_handler(commands=['list'])
+def list_sites(message):
+    user_id = message.chat.id
+    sites = user_sites.get(user_id, [])
+
+    if not sites:
+        bot.send_message(user_id, "Ваш список сайтов пуст.")
+    else:
+        response = "Ваши сайты:\n"
+        for index, site in enumerate(sites):
+            response += f"{index + 1}. {site}\n"
+        bot.send_message(user_id, response)
+####################################################
+
 
 if __name__ == '__main__':
     bot.polling(none_stop=True)
