@@ -46,6 +46,76 @@ def process_request(r):
 
     return status
 
+####################################################
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    help_text = (
+        "/add - добавить сайт в список\n"
+        "/list - показать список сайтов\n"
+        "/check - проверить состояние сайтов\n"
+        "/check <int: index> - проверить состояние сайта\n"
+        "/clear - очистить список сайтов\n"
+        "/clear <int: index> - удалить сайт из списка\n"
+        "/request - сделать HTTP-запрос к сайту\n"
+        "/help - показать это сообщение"
+    )
+    bot.send_message(message.chat.id, help_text)
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "Привет! Я бот для отслеживания состояния сайтов. Используйте /help для получения информации о моих возможностях.")
+
+@bot.message_handler(commands=['add'])
+def add_site(message):
+    msg = bot.send_message(message.chat.id, "Введите URL сайта, который хотите добавить:")
+    bot.register_next_step_handler(msg, process_site)
+
+def process_site(message):
+    site = message.text.strip()
+    user_id = message.chat.id
+
+    if user_id not in user_sites:
+        user_sites[user_id] = []
+
+    if site in user_sites[user_id]:
+        bot.send_message(user_id, f"Сайт {site} уже присутствует в вашем списке")
+    else:
+        user_sites[user_id].append(site)
+        bot.send_message(user_id, f"Сайт {site} добавлен в ваш список.")
+####################################################
+@bot.message_handler(commands=['clear'])
+def clear(message):
+    try:
+        args = message.text.split()
+        if len(args) == 1:
+            if len(user_sites[message.chat.id]) != 0:
+                user_sites.pop(message.chat.id)
+                bot.send_message(message.chat.id, "Ваш список сайтов очищен.")
+            else:
+                raise KeyError
+        elif len(args) > 1:
+            sites = user_sites[message.chat.id]
+            site = sites[int(args[1]) - 1]
+            sites.remove(site)
+            bot.send_message(message.chat.id, f"Сайт {site} удалён из списка.")
+    except KeyError:
+        bot.send_message(message.chat.id, "Вы не добавили ни одного сайта")
+    except (TypeError, ValueError, IndexError):
+        bot.send_message(message.chat.id, "Проверьте корректность введённого индекса!")
+
+@bot.message_handler(commands=['list'])
+def list_sites(message):
+    user_id = message.chat.id
+    sites = user_sites.get(user_id, [])
+
+    if not sites:
+        bot.send_message(user_id, "Ваш список сайтов пуст.")
+    else:
+        response = "Ваши сайты:\n"
+        for index, site in enumerate(sites):
+            response += f"{index + 1}. {site}\n"
+        bot.send_message(user_id, response)
+####################################################
 @bot.message_handler(commands=['check'])
 def check_sites(message):
     user_id = message.chat.id
@@ -73,7 +143,7 @@ def check_sites(message):
         status = "не работает (ошибка соединения)"
     except telebot.apihelper.ApiTelegramException:
         bot.send_message(user_id, "Что-то пошло не так")
-
+####################################################
 @bot.message_handler(commands=['request'])
 def start_req(message):
     msg = bot.send_message(message.chat.id, "Введите URL для HTTP-запроса:")
@@ -81,9 +151,6 @@ def start_req(message):
 
 def get_url(message):
     user_id = message.chat.id
-    #if user_id in user_requests_data:
-    #    del user_requests_data[user_id]
-
     user_requests_data[user_id] = {'url': message.text}
     bot.send_message(message.chat.id, "Выберите HTTP метод: /get, /post, /put, /delete")
     bot.register_next_step_handler(message, select_method)
@@ -154,74 +221,6 @@ def send_response_file(chat_id, response):
 
     # Удаляем файл после отправки
     os.remove(file_path)
-####################################################
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    help_text = (
-        "/add - добавить сайт в список\n"
-        "/list - показать список сайтов\n"
-        "/check - проверить состояние сайтов\n"
-        "/check <int: index> - проверить состояние сайта\n"
-        "/clear - очистить список сайтов\n"
-        "/clear <int: index> - удалить сайт из списка\n"
-        "/request - сделать HTTP-запрос к сайту\n"
-        "/help - показать это сообщение"
-    )
-    bot.send_message(message.chat.id, help_text)
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "Привет! Я бот для отслеживания состояния сайтов. Используйте /help для получения информации о моих возможностях.")
-
-@bot.message_handler(commands=['add'])
-def add_site(message):
-    msg = bot.send_message(message.chat.id, "Введите URL сайта, который хотите добавить:")
-    bot.register_next_step_handler(msg, process_site)
-
-def process_site(message):
-    site = message.text.strip()
-    user_id = message.chat.id
-
-    if user_id not in user_sites:
-        user_sites[user_id] = []
-
-    if site in user_sites[user_id]:
-        bot.send_message(user_id, f"Сайт {site} уже присутствует в вашем списке")
-    else:
-        user_sites[user_id].append(site)
-        bot.send_message(user_id, f"Сайт {site} добавлен в ваш список.")
-####################################################
-@bot.message_handler(commands=['clear'])
-def clear(message):
-    try:
-        args = message.text.split()
-        if len(args) == 1:
-            user_sites.pop(message.chat.id)
-            bot.send_message(message.chat.id, "Ваш список сайтов очищен.")
-        elif len(args) > 1:
-            sites = user_sites[message.chat.id]
-            site = sites[int(args[1]) - 1]
-            sites.remove(site)
-            bot.send_message(message.chat.id, f"Сайт {site} удалён из списка.")
-    except KeyError:
-        bot.send_message(message.chat.id, "Вы не добавили ни одного сайта")
-    except (TypeError, ValueError, IndexError):
-        bot.send_message(message.chat.id, "Проверьте корректность введённого индекса!")
-
-@bot.message_handler(commands=['list'])
-def list_sites(message):
-    user_id = message.chat.id
-    sites = user_sites.get(user_id, [])
-
-    if not sites:
-        bot.send_message(user_id, "Ваш список сайтов пуст.")
-    else:
-        response = "Ваши сайты:\n"
-        for index, site in enumerate(sites):
-            response += f"{index + 1}. {site}\n"
-        bot.send_message(user_id, response)
-####################################################
-
 
 if __name__ == '__main__':
     bot.polling(none_stop=True)
